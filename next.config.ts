@@ -1,7 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  experimental: {
+    serverActions: {
+      // Evidencia manual: correos exportados y PDFs medianos
+      bodySizeLimit: "20mb",
+    },
+  },
 };
 
 export default nextConfig;

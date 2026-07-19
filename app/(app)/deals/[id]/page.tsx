@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { OriginBadge, StatusBadge } from "@/components/badges";
 import { addActor, createEvent, createRequest } from "./actions";
+import { runScribe, uploadEvidence } from "./evidence-actions";
 
 export const metadata = { title: "Deal — Atlas" };
 
@@ -78,6 +80,7 @@ export default async function DealDetailPage({
     { data: timeline },
     { data: dealActors },
     { data: requestState },
+    { data: evidence },
   ] = await Promise.all([
     supabase.from("v_deal_metrics").select("*").eq("deal_id", id).maybeSingle(),
     supabase
@@ -100,7 +103,23 @@ export default async function DealDetailPage({
       .select("subject_id, field_key, value, status, confidence")
       .eq("deal_id", id)
       .eq("subject_type", "request"),
+    supabase
+      .from("evidence_items")
+      .select("id, kind, storage_path, content_hash, captured_at, ingested_at, metadata")
+      .eq("deal_id", id)
+      .order("ingested_at", { ascending: false })
+      .limit(50),
   ]);
+
+  // Métrica objetivo del scribe: % de la cronología reconstruida por IA
+  const { count: inferredCount } = await supabase
+    .from("events")
+    .select("id", { count: "exact", head: true })
+    .eq("deal_id", id)
+    .eq("origin", "inferred");
+  const totalEvents = Number(metrics?.event_count ?? 0);
+  const aiPct =
+    totalEvents > 0 ? Math.round(((inferredCount ?? 0) / totalEvents) * 100) : 0;
 
   const actors = (dealActors ?? []).map((da) => ({
     id: da.actor_id,
@@ -128,17 +147,28 @@ export default async function DealDetailPage({
     <main className="space-y-8">
       {/* Encabezado + métricas */}
       <section>
-        <div className="mb-1 flex items-baseline gap-3">
-          <h1 className="text-lg font-semibold tracking-tight text-neutral-100">
-            {deal.codename}
-          </h1>
-          <span className="text-xs text-neutral-400">{deal.status}</span>
-          <span className="text-xs text-neutral-500">
-            etapa: {deal.current_stage_key ?? "—"}
-          </span>
+        <div className="mb-1 flex items-baseline justify-between gap-3">
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-lg font-semibold tracking-tight text-neutral-100">
+              {deal.codename}
+            </h1>
+            <span className="text-xs text-neutral-400">{deal.status}</span>
+            <span className="text-xs text-neutral-500">
+              etapa: {deal.current_stage_key ?? "—"}
+            </span>
+          </div>
+          <Link
+            href={`/deals/${deal.id}/retro`}
+            className="rounded border border-amber-900/60 px-3 py-1 text-xs text-amber-300 hover:bg-amber-950/30"
+          >
+            Retrospectiva{" "}
+            {Number(metrics?.pending_validations ?? 0) > 0
+              ? `(${metrics!.pending_validations})`
+              : ""}
+          </Link>
         </div>
         {metrics ? (
-          <dl className="mt-3 grid grid-cols-3 gap-px overflow-hidden rounded border border-neutral-800 bg-neutral-800 sm:grid-cols-7">
+          <dl className="mt-3 grid grid-cols-3 gap-px overflow-hidden rounded border border-neutral-800 bg-neutral-800 sm:grid-cols-8">
             {[
               ["Actores", metrics.actor_count],
               ["Documentos", metrics.document_count],
@@ -147,6 +177,7 @@ export default async function DealDetailPage({
               ["Abiertas", metrics.open_requests],
               ["días/sol.", metrics.avg_days_per_request ?? "—"],
               ["Valid. pend.", metrics.pending_validations],
+              ["Reconstr. IA", `${aiPct}%`],
             ].map(([label, value]) => (
               <div key={String(label)} className="bg-neutral-950 px-3 py-2">
                 <dt className="text-[10px] uppercase tracking-wide text-neutral-500">
@@ -171,8 +202,8 @@ export default async function DealDetailPage({
       ) : null}
 
       {/* Captura rápida */}
-      <section className="grid gap-4 lg:grid-cols-3">
-        <details className="rounded border border-neutral-800 bg-neutral-950 p-3 lg:col-span-1">
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <details className="rounded border border-neutral-800 bg-neutral-950 p-3">
           <summary className="cursor-pointer text-sm font-medium text-neutral-200">
             + Evento (captura &lt; 30 s)
           </summary>
@@ -233,7 +264,7 @@ export default async function DealDetailPage({
           </form>
         </details>
 
-        <details className="rounded border border-neutral-800 bg-neutral-950 p-3 lg:col-span-1">
+        <details className="rounded border border-neutral-800 bg-neutral-950 p-3">
           <summary className="cursor-pointer text-sm font-medium text-neutral-200">
             + Solicitud
           </summary>
@@ -295,7 +326,7 @@ export default async function DealDetailPage({
           </form>
         </details>
 
-        <details className="rounded border border-neutral-800 bg-neutral-950 p-3 lg:col-span-1">
+        <details className="rounded border border-neutral-800 bg-neutral-950 p-3">
           <summary className="cursor-pointer text-sm font-medium text-neutral-200">
             + Actor
           </summary>
@@ -337,6 +368,42 @@ export default async function DealDetailPage({
               className="rounded bg-neutral-100 px-3 py-1.5 text-xs font-medium text-neutral-900 hover:bg-white"
             >
               Incorporar actor
+            </button>
+          </form>
+        </details>
+
+        <details className="rounded border border-neutral-800 bg-neutral-950 p-3">
+          <summary className="cursor-pointer text-sm font-medium text-neutral-200">
+            + Evidencia
+          </summary>
+          <form action={uploadEvidence} className="mt-3 space-y-3">
+            <input type="hidden" name="deal_id" value={deal.id} />
+            <div>
+              <label className={labelCls}>Archivo (.eml, .pdf, .txt…)</label>
+              <input
+                name="file"
+                type="file"
+                className="w-full text-xs text-neutral-400 file:mr-2 file:rounded file:border file:border-neutral-700 file:bg-neutral-900 file:px-2 file:py-1 file:text-xs file:text-neutral-200"
+              />
+            </div>
+            <div>
+              <label className={labelCls}>…o pega el contenido</label>
+              <textarea
+                name="text"
+                rows={3}
+                placeholder="Correo exportado, minuta, nota…"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Fecha original (opcional)</label>
+              <input name="captured_at" type="datetime-local" className={inputCls} />
+            </div>
+            <button
+              type="submit"
+              className="rounded bg-neutral-100 px-3 py-1.5 text-xs font-medium text-neutral-900 hover:bg-white"
+            >
+              Subir evidencia
             </button>
           </form>
         </details>
@@ -415,6 +482,72 @@ export default async function DealDetailPage({
           </div>
         ) : (
           <p className="text-sm text-neutral-500">Sin solicitudes abiertas.</p>
+        )}
+      </section>
+
+      {/* Evidencia */}
+      <section>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
+          Evidencia ({evidence?.length ?? 0})
+        </h2>
+        {evidence && evidence.length > 0 ? (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-neutral-800 text-left text-[11px] uppercase tracking-wide text-neutral-500">
+                <th className="py-1.5 pr-4 font-medium">Archivo</th>
+                <th className="py-1.5 pr-4 font-medium">Tipo</th>
+                <th className="py-1.5 pr-4 font-medium">Capturada</th>
+                <th className="py-1.5 pr-4 font-medium">Análisis</th>
+                <th className="py-1.5 font-medium"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {evidence.map((ev) => {
+                const meta = (ev.metadata ?? {}) as Record<string, unknown>;
+                const status = String(meta.scribe_status ?? "pending");
+                return (
+                  <tr key={ev.id} className="border-b border-neutral-900">
+                    <td className="py-1.5 pr-4 text-neutral-200">
+                      {String(meta.filename ?? ev.storage_path ?? "—")}
+                    </td>
+                    <td className="py-1.5 pr-4 text-neutral-400">{ev.kind}</td>
+                    <td className="py-1.5 pr-4 font-mono text-[11px] text-neutral-500">
+                      {ev.captured_at
+                        ? new Date(ev.captured_at).toISOString().slice(0, 10)
+                        : "—"}
+                    </td>
+                    <td className="py-1.5 pr-4">
+                      {status === "done" ? (
+                        <span className="text-[11px] text-emerald-300">analizada</span>
+                      ) : status === "failed" ? (
+                        <span className="text-[11px] text-red-400">falló</span>
+                      ) : (
+                        <span className="text-[11px] text-amber-300">pendiente</span>
+                      )}
+                    </td>
+                    <td className="py-1.5 text-right">
+                      {status !== "done" ? (
+                        <form action={runScribe}>
+                          <input type="hidden" name="deal_id" value={deal.id} />
+                          <input type="hidden" name="evidence_id" value={ev.id} />
+                          <button
+                            type="submit"
+                            className="rounded border border-neutral-700 px-2 py-0.5 text-[11px] text-neutral-300 hover:bg-neutral-800"
+                          >
+                            Analizar con IA
+                          </button>
+                        </form>
+                      ) : null}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <p className="text-sm text-neutral-500">
+            Sin evidencia aún. Sube correos exportados o documentos arriba.
+          </p>
         )}
       </section>
 
