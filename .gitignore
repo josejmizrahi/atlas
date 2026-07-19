@@ -42,4 +42,3 @@ next-env.d.ts
 
 # excepción: plantilla de variables sin secretos
 !.env.example
-!.env.production

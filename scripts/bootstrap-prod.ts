@@ -38,6 +38,21 @@ function fail(label: string, error: { message: string } | null) {
   }
 }
 
+// Búsqueda determinística: recorre todas las páginas del admin API
+// (listUsers no filtra por email; una sola página no basta a escala).
+async function findUserIdByEmail(target: string): Promise<string | null> {
+  const perPage = 1000;
+  for (let page = 1; ; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+    const match = data.users.find(
+      (u) => u.email?.toLowerCase() === target.toLowerCase()
+    );
+    if (match) return match.id;
+    if (data.users.length < perPage) return null;
+  }
+}
+
 async function main() {
   // 1. Usuario (idempotente)
   let userId: string;
@@ -48,11 +63,9 @@ async function main() {
   });
   if (createErr) {
     if (!createErr.message.includes("already been registered")) throw createErr;
-    const { data: list, error: listErr } = await admin.auth.admin.listUsers();
-    if (listErr) throw listErr;
-    const existing = list.users.find((u) => u.email === email);
-    if (!existing) throw new Error("Usuario no encontrado tras conflicto");
-    userId = existing.id;
+    const existingId = await findUserIdByEmail(email!);
+    if (!existingId) throw new Error("Usuario no encontrado tras conflicto");
+    userId = existingId;
     console.log(`Usuario ya existía: ${email}`);
   } else {
     userId = created.user.id;
