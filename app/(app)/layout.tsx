@@ -30,6 +30,12 @@ export default async function AppLayout({
             >
               Deals
             </Link>
+            <Link
+              href="/sources"
+              className="text-xs text-neutral-400 hover:text-neutral-200"
+            >
+              Fuentes
+            </Link>
           </nav>
           <div className="flex items-center gap-4">
             <span className="text-xs text-neutral-500">{user?.email}</span>

@@ -46,6 +46,13 @@ docker exec supabase_db_atlas psql -U supabase_admin -d postgres -f /tmp/smoke.s
 - Cambios nuevos al esquema = migración nueva (`0003+`), nunca editar las aplicadas.
 - Regenerar tipos tras cambios: `npm run gen:types`.
 
+## Conectores (Fase 4)
+
+- **Fuentes** (`/sources`): conectores Gmail y Drive por organización. La configuración no sensible (query, carpeta, deal destino) vive en `evidence_sources.config`; el refresh token de Google vive en **Vault** (migración 0005, acceso solo `service_role`).
+- **Conectar una fuente**: crea la credencial OAuth "Desktop app" en Google Cloud (scopes `gmail.readonly` + `drive.readonly`), exporta `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` y corre `npx tsx scripts/connect-google.ts --source <id>` (apunta a local o remoto según `NEXT_PUBLIC_SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`).
+- **Secrets de Edge Functions** (proyecto remoto): `ANTHROPIC_API_KEY` (scribe), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (ingest).
+- **Dedupe doble** por deal: `external_ref` (message-id / file-id) y `content_hash` (sha-256). Cada corrida queda auditada en `ingestion_jobs`; la evidencia nueva dispara el scribe automáticamente.
+
 ## Alcance v0
 
 Seis capacidades: crear deal, incorporar actores, recibir evidencia, reconstruir cronología con IA, identificar solicitudes/dependencias/esperas, retrospectiva semanal. **No** incluye: data room, firmas, SPVs, capital calls, marketplace, tokenización, ni agentes que deciden.
