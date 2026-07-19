@@ -1793,6 +1793,15 @@ export type Database = {
         Returns: string
       }
       confirm_assertion: { Args: { p_assertion: string }; Returns: undefined }
+      create_deal: {
+        Args: {
+          p_codename: string
+          p_org: string
+          p_stage?: string
+          p_template_version: string
+        }
+        Returns: string
+      }
     }
     Enums: {
       actor_kind: "person" | "organization"
@@ -2189,3 +2198,4 @@ export const Constants = {
     },
   },
 } as const
+
