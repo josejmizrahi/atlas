@@ -1792,6 +1792,7 @@ export type Database = {
         }
         Returns: string
       }
+      claim_first_org: { Args: never; Returns: string }
       confirm_assertion: { Args: { p_assertion: string }; Returns: undefined }
       create_deal: {
         Args: {
@@ -1801,6 +1802,11 @@ export type Database = {
           p_template_version: string
         }
         Returns: string
+      }
+      read_source_secret: { Args: { p_source: string }; Returns: string }
+      store_source_secret: {
+        Args: { p_secret: string; p_source: string }
+        Returns: undefined
       }
     }
     Enums: {
